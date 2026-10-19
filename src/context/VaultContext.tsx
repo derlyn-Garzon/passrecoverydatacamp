@@ -91,8 +91,10 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           body: JSON.stringify(newPayload),
         });
 
+        
         if (!saveRes.ok) {
-          throw new Error('Error al inicializar la bóveda en el servidor.');
+          const errorData = await saveRes.json().catch(() => ({}));
+          throw new Error(errorData.error || `Error al inicializar la bóveda en el servidor (${saveRes.status}).`);
         }
 
         setCredentials(initialCredentials);
