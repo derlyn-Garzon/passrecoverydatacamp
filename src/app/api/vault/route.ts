@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { EncryptedVaultPayload } from '@/lib/crypto';
+import { supabase } from '@/lib/supabase';
 
-const VAULT_FILE_PATH = path.join(process.cwd(), 'vault.json');
-
-/** Helper to validate encrypted payload schema without revealing contents */
+/** Helper para validar la estructura del payload cifrado sin revelar contenidos */
 function isValidVaultPayload(data: unknown): data is EncryptedVaultPayload {
   if (!data || typeof data !== 'object') return false;
   const obj = data as Record<string, unknown>;
@@ -22,47 +19,36 @@ function isValidVaultPayload(data: unknown): data is EncryptedVaultPayload {
 
 /**
  * GET /api/vault
- * Defensive retrieval of encrypted vault file.
- * Returns { exists: boolean, data: EncryptedVaultPayload | null }
+ * Obtiene la bóveda cifrada desde la tabla passDataBase de Supabase.
  */
 export async function GET() {
   try {
-    if (!fs.existsSync(VAULT_FILE_PATH)) {
+    const { data: record, error } = await supabase
+      .from('passDataBase')
+      .select('data')
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    if (!record || !record.data) {
       return NextResponse.json(
         { exists: false, data: null, message: 'La bóveda aún no existe.' },
         { status: 200 }
       );
     }
 
-    const fileContent = fs.readFileSync(VAULT_FILE_PATH, 'utf-8').trim();
-
-    if (!fileContent) {
-      return NextResponse.json(
-        { exists: false, data: null, message: 'El archivo de la bóveda está vacío.' },
-        { status: 200 }
-      );
-    }
-
-    let parsedData: unknown;
-    try {
-      parsedData = JSON.parse(fileContent);
-    } catch {
-      return NextResponse.json(
-        {
-          exists: false,
-          data: null,
-          error: 'Corrupción detectada: El archivo vault.json no contiene JSON válido.',
-        },
-        { status: 200 }
-      );
-    }
+    const parsedData = record.data;
 
     if (!isValidVaultPayload(parsedData)) {
       return NextResponse.json(
         {
           exists: false,
           data: null,
-          error: 'Estructura inválida: El archivo vault.json no cumple con el esquema cifrado.',
+          error: 'Estructura inválida: Los datos guardados no cumplen con el esquema cifrado.',
         },
         { status: 200 }
       );
@@ -86,7 +72,7 @@ export async function GET() {
 
 /**
  * POST /api/vault
- * Defensive save of encrypted vault data. Zero-Knowledge enforcement.
+ * Guarda o actualiza el payload cifrado en la tabla passDataBase de Supabase.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -102,16 +88,35 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Atomic file write using temporary file to prevent corruption
-    const tempPath = `${VAULT_FILE_PATH}.tmp`;
-    const payloadString = JSON.stringify(body, null, 2);
+    // Busca si ya existe una entrada previa para actualizarla o insertar una nueva
+    const { data: existing } = await supabase
+      .from('passDataBase')
+      .select('id')
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    fs.writeFileSync(tempPath, payloadString, 'utf-8');
-    fs.renameSync(tempPath, VAULT_FILE_PATH);
+    let error;
+    if (existing) {
+      const res = await supabase
+        .from('passDataBase')
+        .update({ data: body, updated_at: new Date().toISOString() })
+        .eq('id', existing.id);
+      error = res.error;
+    } else {
+      const res = await supabase
+        .from('passDataBase')
+        .insert([{ data: body, updated_at: new Date().toISOString() }]);
+      error = res.error;
+    }
+
+    if (error) {
+      throw error;
+    }
 
     return NextResponse.json({
       success: true,
-      message: 'Bóveda cifrada guardada exitosamente.',
+      message: 'Bóveda cifrada guardada exitosamente en Supabase.',
     });
   } catch (error) {
     return NextResponse.json(
