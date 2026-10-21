@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = 'https://rmokomdjsueiehljkvnz.supabase.co';
+const supabaseKey = 'sb_publishable_nVCaWKmCUZM6bXskTEenuA_Up8oPJUu';
 
 if (!supabaseUrl || !supabaseKey) {
   throw new Error('Faltan las variables de entorno de Supabase.');
